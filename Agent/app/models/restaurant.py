@@ -2,9 +2,8 @@
 
 from sqlalchemy import (
     Column, Integer, Text, String, Numeric, Boolean,
-    ARRAY, TIMESTAMP, Double, func,
+    JSON, TIMESTAMP, Double, func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -25,7 +24,7 @@ class Restaurant(Base):
     area = Column(Text, nullable=True)
     city = Column(Text, nullable=False, server_default="Bangalore")
 
-    cuisine_types = Column(ARRAY(Text), nullable=False, server_default="{}")
+    cuisine_types = Column(JSON, nullable=False, default=list)
     price_tier = Column(String(10), nullable=True)   # '$' | '$$' | '$$$' | '$$$$'
     cost_for_two = Column(Integer, nullable=True)
 
@@ -36,12 +35,12 @@ class Restaurant(Base):
     lng = Column(Double, nullable=True)
 
     # Allergen metadata
-    known_allergens = Column(ARRAY(Text), nullable=False, server_default="{}")
+    known_allergens = Column(JSON, nullable=False, default=list)
     allergen_confidence = Column(
         String(10), nullable=False, server_default="low"
     )  # 'high' | 'medium' | 'low'
 
-    meta = Column(JSONB, nullable=False, server_default="{}")
+    meta = Column(JSON, nullable=False, default=dict)
 
     is_active = Column(Boolean, nullable=False, server_default="true")
     created_at = Column(

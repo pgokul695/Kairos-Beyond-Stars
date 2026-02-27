@@ -1,10 +1,9 @@
 """Interaction ORM model — audit trail of every chat turn."""
 
 from sqlalchemy import (
-    Column, BigInteger, Text, Boolean, Integer,
-    ARRAY, TIMESTAMP, ForeignKey, func,
+    Column, Integer, Text, Boolean, String,
+    JSON, TIMESTAMP, ForeignKey, func,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -18,22 +17,22 @@ class Interaction(Base):
 
     __tablename__ = "interactions"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     uid = Column(
-        UUID(as_uuid=True),
+        String(36),
         ForeignKey("users.uid", ondelete="CASCADE"),
         nullable=False,
     )
 
     user_query = Column(Text, nullable=False)
-    agent_response = Column(JSONB, nullable=False, server_default="{}")
+    agent_response = Column(JSON, nullable=False, default=dict)
 
     ui_type = Column(Text, nullable=True)
-    restaurant_ids = Column(ARRAY(Integer), nullable=True)
+    restaurant_ids = Column(JSON, nullable=True)
 
     # Allergy audit trail
-    allergy_warnings_shown = Column(Boolean, nullable=False, server_default="false")
-    allergens_flagged = Column(ARRAY(Text), nullable=False, server_default="{}")
+    allergy_warnings_shown = Column(Boolean, nullable=False, server_default="0")
+    allergens_flagged = Column(JSON, nullable=False, default=list)
 
     prompt_tokens = Column(Integer, nullable=True)
     completion_tokens = Column(Integer, nullable=True)

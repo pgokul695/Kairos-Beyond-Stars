@@ -9,7 +9,10 @@ class Settings(BaseSettings):
     """Centralised settings — no hardcoded values anywhere else."""
 
     # Database
-    database_url: str = Field(..., env="DATABASE_URL")
+    database_url: str = Field(
+        "sqlite+aiosqlite:///./data/kairos_agent.db", env="DATABASE_URL"
+    )
+    chroma_path: str = Field("./data/chroma", env="CHROMA_PATH")
 
     # Google AI
     google_api_key: str = Field(..., env="GOOGLE_API_KEY")

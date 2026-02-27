@@ -1,8 +1,9 @@
-"""Review ORM model with vector embedding for semantic search."""
+"""Review ORM model — text and allergen mentions stored in SQLite.
+Embeddings are stored separately in ChromaDB.
+"""
 
-from sqlalchemy import Column, Integer, Text, ARRAY, TIMESTAMP, ForeignKey, Numeric, Date, String, func
+from sqlalchemy import Column, Integer, Text, JSON, TIMESTAMP, ForeignKey, Numeric, Date, String, func
 from sqlalchemy.orm import relationship
-from pgvector.sqlalchemy import Vector
 
 from app.database import Base
 
@@ -25,10 +26,10 @@ class Review(Base):
     )
 
     review_text = Column(Text, nullable=False)
-    embedding = Column(Vector(768), nullable=True)
+    # NOTE: embeddings are stored in ChromaDB, not SQLite
 
     # Allergen keywords found in this review
-    allergen_mentions = Column(ARRAY(Text), nullable=False, server_default="{}")
+    allergen_mentions = Column(JSON, nullable=False, default=list)
 
     source = Column(String(50), nullable=False, server_default="zomato")
     review_date = Column(Date, nullable=True)
