@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # Google AI
     google_api_key: str = Field(..., env="GOOGLE_API_KEY")
     gemma_model: str = Field("gemma-2-9b-it", env="GEMMA_MODEL")
-    embedding_model: str = Field("text-embedding-004", env="EMBEDDING_MODEL")
+    embedding_model: str = Field("gemini-embedding-001", env="EMBEDDING_MODEL")
     embedding_dimensions: int = Field(768, env="EMBEDDING_DIMENSIONS")
 
     # Security
