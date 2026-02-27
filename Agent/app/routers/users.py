@@ -12,6 +12,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy import func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -265,12 +266,12 @@ async def patch_user_allergies(
     return AllergyFlagsResponse(uid=uid, allergy_flags=allergy_flags, updated=True)
 
 
-@router.delete("/{uid}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{uid}")
 async def delete_user(
     uid: UUID,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_service_token),
-) -> None:
+) -> Response:
     """Delete a user and cascade-delete all their interactions."""
     result = await db.execute(
         text("SELECT uid FROM users WHERE uid = :uid"),
@@ -295,6 +296,7 @@ async def delete_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete user",
         ) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{uid}/interactions", response_model=InteractionListResponse)
@@ -350,12 +352,12 @@ async def list_interactions(
     )
 
 
-@router.delete("/{uid}/interactions", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{uid}/interactions")
 async def clear_interactions(
     uid: UUID,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_service_token),
-) -> None:
+) -> Response:
     """Clear all interaction history for a user (keeps the user record)."""
     result = await db.execute(
         text("SELECT uid FROM users WHERE uid = :uid"),
@@ -380,3 +382,4 @@ async def clear_interactions(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to clear interactions",
         ) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
