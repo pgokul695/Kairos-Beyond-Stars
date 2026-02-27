@@ -1,10 +1,16 @@
 """Async SQLAlchemy engine, session factory, and Base declaration."""
 
+import os
+
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import text
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
+
+# Ensure the data directory exists for SQLite
+os.makedirs("./data", exist_ok=True)
 
 
 class Base(DeclarativeBase):
@@ -15,9 +21,8 @@ class Base(DeclarativeBase):
 engine = create_async_engine(
     settings.database_url,
     echo=(settings.app_env == "development"),
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    connect_args={"check_same_thread": False},
+    poolclass=NullPool,
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -45,9 +50,3 @@ async def check_db_connectivity() -> bool:
         return True
     except Exception:
         return False
-
-
-async def init_pgvector(session: AsyncSession) -> None:
-    """Ensure the pgvector extension exists in the current database."""
-    await session.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-    await session.commit()

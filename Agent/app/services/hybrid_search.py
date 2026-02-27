@@ -1,10 +1,17 @@
 """
-Hybrid search service — combines SQL filtering with pgvector cosine similarity.
-Uses named columns only (no SELECT *).
+Hybrid search service — SQLite scalar filtering + ChromaDB cosine similarity.
+
+Flow:
+  1. Query ChromaDB with a text embedding → ordered list of restaurant_ids.
+  2. Fetch matching restaurants from SQLite with scalar filters.
+  3. Python-side filter for array fields (cuisine_types, allergens).
+  4. Rank by ChromaDB similarity order, then by rating as tiebreak.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from typing import Any, Optional
 
@@ -13,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.restaurant import RestaurantResult, RadarScores
 from app.services.embedding import embed_single
+from app.services.chroma_client import get_reviews_collection
 
 logger = logging.getLogger(__name__)
 
@@ -26,32 +34,53 @@ async def hybrid_search(
     """
     Execute a hybrid search over the restaurants table.
 
-    1. Apply SQL filters (price_tier, cuisine_types, area, min_rating,
-       exclude_allergens for anaphylactic allergens only).
-    2. Retrieve a vector embedding for vector_query.
-    3. Order by cosine distance to the embedding, fallback to rating if no embedding.
-    4. Return up to `limit` results as RestaurantResult objects.
+    1. Embed vector_query and query ChromaDB for top matching restaurant IDs.
+    2. Apply SQLite scalar filters (price_tier, area, min_rating).
+    3. Python-side filter array fields (cuisine_types, exclude_allergens).
+    4. Return up to `limit` results ordered by vector similarity then rating.
     """
-    # Build embedding for semantic ranking
     query_embedding: Optional[list[float]] = await embed_single(vector_query)
 
-    # Build dynamic WHERE clauses
-    conditions: list[str] = ["r.is_active = TRUE"]
-    params: dict[str, Any] = {"limit": limit}
+    # Step 1: ChromaDB vector search → ordered restaurant IDs
+    chroma_ranked_ids: list[int] = []
+    if query_embedding:
+        def _chroma_query() -> list[int]:
+            collection = get_reviews_collection()
+            count = collection.count()
+            if count == 0:
+                return []
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=min(200, count),
+                include=["metadatas"],
+            )
+            seen: set[int] = set()
+            ids: list[int] = []
+            for meta in (results.get("metadatas") or [[]])[0]:
+                rid = meta.get("restaurant_id")
+                if rid is not None:
+                    rid = int(rid)
+                    if rid not in seen:
+                        ids.append(rid)
+                        seen.add(rid)
+            return ids
+
+        chroma_ranked_ids = await asyncio.to_thread(_chroma_query)
+
+    # Step 2: SQLite query with scalar filters
+    conditions: list[str] = ["r.is_active = 1"]
+    params: dict[str, Any] = {}
 
     price_tiers: list[str] = sql_filters.get("price_tiers", [])
     if price_tiers:
-        conditions.append("r.price_tier = ANY(:price_tiers)")
-        params["price_tiers"] = price_tiers
-
-    cuisine_types: list[str] = sql_filters.get("cuisine_types", [])
-    if cuisine_types:
-        conditions.append("r.cuisine_types && :cuisine_types")
-        params["cuisine_types"] = cuisine_types
+        placeholders = ", ".join(f":pt{i}" for i in range(len(price_tiers)))
+        conditions.append(f"r.price_tier IN ({placeholders})")
+        for i, pt in enumerate(price_tiers):
+            params[f"pt{i}"] = pt
 
     area: Optional[str] = sql_filters.get("area")
     if area:
-        conditions.append("r.area ILIKE :area")
+        conditions.append("r.area LIKE :area")
         params["area"] = f"%{area}%"
 
     min_rating: Optional[float] = sql_filters.get("min_rating")
@@ -59,61 +88,82 @@ async def hybrid_search(
         conditions.append("r.rating >= :min_rating")
         params["min_rating"] = min_rating
 
-    # Hard filter: exclude anaphylactic allergens
-    exclude_allergens: list[str] = sql_filters.get("exclude_allergens", [])
-    if exclude_allergens:
-        conditions.append("NOT (r.known_allergens && :exclude_allergens)")
-        params["exclude_allergens"] = exclude_allergens
-
     where_clause = " AND ".join(conditions)
 
-    # Choose ORDER BY based on embedding availability
-    if query_embedding:
-        order_clause = "rv.embedding <=> :embedding ASC, r.rating DESC NULLS LAST"
-        params["embedding"] = str(query_embedding)
-        join_clause = """
-            LEFT JOIN (
-                SELECT restaurant_id, embedding
-                FROM reviews
-                WHERE embedding IS NOT NULL
-                ORDER BY id DESC
-            ) rv ON rv.restaurant_id = r.id
-        """
-    else:
-        order_clause = "r.rating DESC NULLS LAST"
-        join_clause = ""
-
     sql = text(f"""
-        SELECT DISTINCT ON (r.id)
-            r.id,
-            r.name,
-            r.url,
-            r.address,
-            r.area,
-            r.city,
-            r.cuisine_types,
-            r.price_tier,
-            r.cost_for_two,
-            r.rating,
-            r.votes,
-            r.lat,
-            r.lng,
-            r.known_allergens,
-            r.allergen_confidence,
-            r.meta
+        SELECT
+            r.id, r.name, r.url, r.address, r.area,
+            r.cuisine_types, r.price_tier, r.cost_for_two,
+            r.rating, r.votes, r.lat, r.lng,
+            r.known_allergens, r.allergen_confidence, r.meta
         FROM restaurants r
-        {join_clause}
         WHERE {where_clause}
-        ORDER BY r.id, {order_clause}
-        LIMIT :limit
     """)
 
     result = await db.execute(sql, params)
     rows = result.fetchall()
 
-    restaurants: list[RestaurantResult] = []
+    # Step 3: Python-side array filters
+    cuisine_types: list[str] = sql_filters.get("cuisine_types", [])
+    exclude_allergens: list[str] = sql_filters.get("exclude_allergens", [])
+
+    def _parse_json_field(val: Any) -> list:
+        if isinstance(val, list):
+            return val
+        if isinstance(val, str):
+            try:
+                return json.loads(val)
+            except Exception:
+                return []
+        return []
+
+    filtered: list[tuple] = []
     for row in rows:
-        meta = row.meta or {}
+        cuisines = _parse_json_field(row.cuisine_types)
+        allergens = _parse_json_field(row.known_allergens)
+
+        if cuisine_types and not any(c in cuisines for c in cuisine_types):
+            continue
+        if exclude_allergens and any(a in allergens for a in exclude_allergens):
+            continue
+
+        filtered.append((row, cuisines, allergens))
+
+    # Step 4: rank by ChromaDB order, then descending rating
+    chroma_index = {rid: i for i, rid in enumerate(chroma_ranked_ids)}
+    filtered.sort(
+        key=lambda t: (
+            chroma_index.get(t[0].id, len(chroma_ranked_ids)),
+            -(float(t[0].rating) if t[0].rating else 0.0),
+        )
+    )
+
+    restaurants: list[RestaurantResult] = []
+    for row, cuisines, allergens in filtered[:limit]:
+        meta = _parse_json_field(row.meta) if isinstance(row.meta, str) else (row.meta or {})
+        if isinstance(meta, list):
+            meta = {}
+        restaurants.append(
+            RestaurantResult(
+                id=row.id,
+                name=row.name,
+                url=row.url,
+                address=row.address,
+                area=row.area,
+                price_tier=row.price_tier,
+                rating=float(row.rating) if row.rating else None,
+                votes=row.votes or 0,
+                cuisine_types=cuisines,
+                lat=row.lat,
+                lng=row.lng,
+                known_allergens=allergens,
+                allergen_confidence=row.allergen_confidence or "low",
+                meta=meta,
+            )
+        )
+
+    return restaurants
+
         restaurants.append(
             RestaurantResult(
                 id=row.id,

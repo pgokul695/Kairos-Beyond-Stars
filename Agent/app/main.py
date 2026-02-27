@@ -1,10 +1,11 @@
 """
 Kairos Agent — FastAPI application entry point.
-Lifespan: create pgvector extension → create DB tables → verify connectivity.
+Lifespan: create DB tables → verify connectivity → warm ChromaDB.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -14,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.database import AsyncSessionLocal, engine, init_pgvector
+from app.database import AsyncSessionLocal, engine
 from app.models import Base
 from app.routers import chat, health, users
 
@@ -29,29 +30,29 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     Application lifespan handler.
-    1. Create pgvector extension.
-    2. Create all tables (idempotent — IF NOT EXISTS).
-    3. Verify DB connectivity.
+    1. Create all SQLite tables (idempotent — IF NOT EXISTS).
+    2. Verify DB connectivity.
+    3. Warm up ChromaDB collection.
     """
     logger.info("Starting Kairos Agent (env=%s)", settings.app_env)
 
-    async with AsyncSessionLocal() as session:
-        # Step 1: ensure pgvector extension
-        await init_pgvector(session)
-        logger.info("pgvector extension ready.")
+    # Step 1: create tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database tables created/verified.")
 
-        # Step 2: create tables
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables created/verified.")
+    # Step 2: connectivity check
+    from app.database import check_db_connectivity
+    ok = await check_db_connectivity()
+    if not ok:
+        logger.error("Database connectivity check FAILED at startup.")
+    else:
+        logger.info("Database connectivity verified.")
 
-        # Step 3: connectivity check
-        from app.database import check_db_connectivity
-        ok = await check_db_connectivity()
-        if not ok:
-            logger.error("Database connectivity check FAILED at startup.")
-        else:
-            logger.info("Database connectivity verified.")
+    # Step 3: warm ChromaDB
+    from app.services.chroma_client import get_reviews_collection
+    await asyncio.to_thread(get_reviews_collection)
+    logger.info("ChromaDB reviews collection ready.")
 
     yield
 
