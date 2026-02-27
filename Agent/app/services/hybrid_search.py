@@ -214,24 +214,3 @@ async def hybrid_search(
         )
 
     return restaurants
-
-        restaurants.append(
-            RestaurantResult(
-                id=row.id,
-                name=row.name,
-                url=row.url,
-                address=row.address,
-                area=row.area,
-                price_tier=row.price_tier,
-                rating=float(row.rating) if row.rating else None,
-                votes=row.votes or 0,
-                cuisine_types=row.cuisine_types or [],
-                lat=row.lat,
-                lng=row.lng,
-                known_allergens=row.known_allergens or [],
-                allergen_confidence=row.allergen_confidence or "low",
-                meta=meta,
-            )
-        )
-
-    return restaurants
