@@ -5,6 +5,7 @@ and updates the user profile. Never touches allergy data.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -97,7 +98,7 @@ async def update_user_profile(
                 WHERE uid = :uid
             """),
             {
-                "preferences": current_prefs,
+                "preferences": json.dumps(current_prefs),  # JSONB needs serialized text
                 "dietary_flags": dietary_flags,
                 "vibe_tags": vibe_tags,
                 "now": datetime.now(timezone.utc),

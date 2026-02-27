@@ -226,3 +226,89 @@ def build_allergy_context(allergies: dict[str, Any]) -> str:
         )
 
     return "\n".join(parts)
+
+
+# ── ReAct planner ─────────────────────────────────────────────────────────────
+
+
+def build_planner_prompt(
+    user_context: str,
+    allergy_context: str,
+    history: list[dict[str, str]],
+    message: str,
+    observations: list[str],
+) -> str:
+    """
+    Build the prompt for the ReAct planner called at the start of each loop iteration.
+
+    The SAFETY section is mandatory and always placed before the user query.
+    The planner must choose one of four tools and provide tool_input JSON.
+
+    observations accumulates results from all previous tool calls in the current
+    turn so that the planner has full context when deciding the next action.
+    """
+    history_text = ""
+    if history:
+        history_lines = []
+        for turn in history[-6:]:   # last 3 turns (user + assistant pairs)
+            role = turn.get("role", "user").capitalize()
+            history_lines.append(f"{role}: {turn.get('content', '')}")
+        history_text = "\n".join(history_lines) + "\n"
+
+    observations_text = ""
+    if observations:
+        numbered = "\n".join(
+            f"  [{i + 1}] {obs}" for i, obs in enumerate(observations)
+        )
+        observations_text = f"\n## OBSERVATIONS FROM PREVIOUS STEPS THIS TURN\n{numbered}\n"
+
+    return f"""You are Kairos, a restaurant recommendation AI for Bangalore.
+You are operating inside a ReAct (Reasoning + Acting) loop.
+On each iteration you must reason about the current state and choose exactly one tool to call next.
+
+## USER CONTEXT
+{user_context}
+
+## SAFETY — USER ALLERGIES (NEVER SKIP)
+{allergy_context}
+Anaphylactic allergens MUST appear in sql_filters.exclude_allergens for any search_restaurants call.
+This is non-negotiable.
+{observations_text}
+## CONVERSATION HISTORY
+{history_text}
+## CURRENT USER MESSAGE
+{message}
+
+## AVAILABLE TOOLS
+
+search_restaurants
+  Input: {{ "sql_filters": {{ "price_tiers": [...], "cuisine_types": [...], "area": "...",
+             "min_rating": 4.0, "exclude_allergens": [...] }},
+           "vector_query": "descriptive semantic query string" }}
+  Use when: you need to find restaurants matching criteria.
+  Note: if a previous observation says 0 results, broaden filters (remove area, lower price tier, etc.).
+
+evaluate_candidates
+  Input: {{ "candidate_ids": [1, 2, 3, ...] }}
+  Use when: you have search results and want to score + rank them.
+  Prerequisite: search_restaurants must have been called and returned results.
+
+ask_clarification
+  Input: {{ "question": "What specific question to ask the user?" }}
+  Use when: the query is genuinely ambiguous and you cannot make a reasonable assumption.
+  Note: prefer searching with reasonable defaults over asking.
+
+final_response
+  Input: {{ "ui_type": "restaurant_list" | "radar_comparison" | "map_view" | "text" }}
+  Use when: you have enough evaluated candidates to give a useful answer.
+  Note: you MUST call this to send results to the user. The loop ends after this.
+
+## OUTPUT FORMAT
+Output only valid JSON matching the schema below.
+No markdown fences. No preamble. No explanation.
+
+{{
+  "thought": "Brief reasoning about current state and why you are choosing this tool",
+  "tool": "search_restaurants | evaluate_candidates | ask_clarification | final_response",
+  "tool_input": {{ ... }}
+}}"""
