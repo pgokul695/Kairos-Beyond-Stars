@@ -41,7 +41,14 @@ async def verify_service_token(
     x_service_token: str = Header(..., alias="X-Service-Token"),
 ) -> None:
     """Verify that the inter-service token matches the configured secret."""
-    if x_service_token != settings.service_token:
+    received = x_service_token.strip()
+    expected = settings.service_token.strip()
+    if received != expected:
+        logger.warning(
+            "Service token mismatch — received len=%d, expected len=%d",
+            len(received),
+            len(expected),
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid service token",

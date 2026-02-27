@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database import AsyncSessionLocal, engine
 from app.models import Base
-from app.routers import chat, health, users
+from app.routers import chat, health, recommendations, users
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -82,6 +82,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(users.router)
+app.include_router(recommendations.router)
 
 
 # ── Global exception handler ─────────────────────────────────────────────────

@@ -319,6 +319,7 @@ async def run_ingest(
     dry_run: bool = False,
     re_embed: bool = False,
     retag_allergens: bool = False,
+    limit: Optional[int] = None,
 ) -> None:
     """Full ingestion pipeline."""
     logger.info("Loading CSV: %s", csv_path)
@@ -336,6 +337,10 @@ async def run_ingest(
     before = len(df)
     df = df.drop_duplicates(subset=[name_col, area_col])
     logger.info("After dedup on (name, location): %d rows (removed %d).", len(df), before - len(df))
+
+    if limit is not None:
+        df = df.head(limit)
+        logger.info("Limit applied: processing first %d rows.", len(df))
 
     if dry_run:
         logger.info("-- DRY RUN: parsing only, no DB writes --")
@@ -490,6 +495,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Parse only, no DB writes")
     parser.add_argument("--re-embed", action="store_true", help="Regenerate all embeddings")
     parser.add_argument("--retag-allergens", action="store_true", help="Re-run allergen tagger only")
+    parser.add_argument("--limit", type=int, default=None, help="Process only the first N rows (for testing)")
     args = parser.parse_args()
 
     asyncio.run(
@@ -498,6 +504,7 @@ def main() -> None:
             dry_run=args.dry_run,
             re_embed=args.re_embed,
             retag_allergens=args.retag_allergens,
+            limit=args.limit,
         )
     )
 
