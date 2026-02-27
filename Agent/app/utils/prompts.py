@@ -228,6 +228,142 @@ def build_allergy_context(allergies: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+# ── Recommendation fit explanation ───────────────────────────────────────────
+
+
+def build_fit_explanation_prompt(
+    restaurants: list[dict],
+    user_context: str,
+    allergy_context: str,
+) -> str:
+    """
+    Build a single batch prompt that generates a consolidated_review for every
+    selected restaurant in one LLM call.
+
+    Returns a JSON array, one object per restaurant, indexed by restaurant_id.
+    consolidated_review must be ≤160 chars, present tense, with one specific
+    concrete detail. Never generic.
+    """
+    restaurants_json = json.dumps(restaurants, ensure_ascii=False)
+    return f"""You are Kairos, a restaurant recommendation AI for Bangalore.
+Generate a one-sentence consolidated review for each restaurant below.
+
+## USER CONTEXT
+{user_context}
+
+## SAFETY — USER ALLERGIES
+{allergy_context}
+Do NOT mention allergens from the user's profile in any review text.
+Allergen safety is handled separately — never reference it in reviews.
+
+## RESTAURANTS
+{restaurants_json}
+
+## RULES FOR consolidated_review
+- Maximum 160 characters. Present tense.
+- Must include ONE specific concrete detail: a signature dish, a defining characteristic,
+  or a direct quote echoing what reviewers say.
+- FORBIDDEN: "great food", "nice ambiance", "good service", "wonderful place" — too generic.
+- Good example: "Famous for the butter masala dosa — regulars say it's the crispiest in Koramangala."
+- Good example: "A rooftop garden space beloved for slow brunches and filter coffee."
+
+## OUTPUT FORMAT
+Output only a valid JSON array. No markdown fences. No preamble. No explanation.
+One object per restaurant.
+
+[
+  {{
+    "restaurant_id": 42,
+    "consolidated_review": "...",
+    "fit_tags_override": null
+  }}
+]"""
+
+
+# ── Recommendation expand detail ──────────────────────────────────────────────
+
+
+def build_expand_detail_prompt(
+    restaurant: dict,
+    reviews: list[str],
+    user_context: str,
+    allergy_context: str,
+) -> str:
+    """
+    Build the prompt for the /expand endpoint — returns full ExpandedDetail JSON
+    for a single restaurant, personalised to the user's stored preferences.
+    """
+    reviews_json = json.dumps(reviews, ensure_ascii=False)
+    restaurant_json = json.dumps(restaurant, ensure_ascii=False)
+    return f"""You are Kairos, a restaurant recommendation AI for Bangalore.
+Generate a rich, structured detail panel for the restaurant below.
+
+## USER CONTEXT (reference these preferences BY NAME in why_fit_paragraph)
+{user_context}
+
+## SAFETY — USER ALLERGIES
+{allergy_context}
+Do NOT mention allergens from the user's profile in any field.
+Allergy information is handled separately.
+
+## RESTAURANT
+{restaurant_json}
+
+## REVIEWS (up to 10, most recent first)
+{reviews_json}
+
+## REQUIRED OUTPUT FIELDS
+
+review_summary
+  A full paragraph summarising all reviews — tone, highlights, recurring praise,
+  recurring complaints. Grounded in the actual review text above.
+
+highlights (3 to 5 items)
+  Each must start with a single relevant emoji followed by a specific detail.
+  Grounded in review content — not invented.
+
+crowd_profile
+  One sentence describing the actual customer type from review signals.
+  Not generic — name the specific demographic.
+
+best_for (2 to 4 items)
+  Occasion tags grounded in review content.
+
+avoid_if (1 to 3 items)
+  Specific situations where this restaurant is a poor fit, from review signals.
+
+radar_scores
+  Infer from review sentiment. Use 5.0 if insufficient evidence.
+  Fields: romance, noise_level (10=very quiet), food_quality, vegan_options, value_for_money.
+  All values 0–10.
+
+why_fit_paragraph
+  Explain why this restaurant matches THIS specific user.
+  Reference their stored preferences by name: e.g., "your vegan diet",
+  "your preference for quiet vibes", "your South Indian cuisine affinity".
+
+## OUTPUT FORMAT
+Output only valid JSON. No markdown fences. No preamble. No explanation.
+
+{{
+  "review_summary": "...",
+  "highlights": [
+    {{"emoji": "🌿", "text": "..."}}
+  ],
+  "crowd_profile": "...",
+  "best_for": ["..."],
+  "avoid_if": ["..."],
+  "radar_scores": {{
+    "romance": 7.5,
+    "noise_level": 8.0,
+    "food_quality": 8.5,
+    "vegan_options": 9.0,
+    "value_for_money": 7.0
+  }},
+  "why_fit_paragraph": "..."
+}}"""
+
+
 # ── ReAct planner ─────────────────────────────────────────────────────────────
 
 

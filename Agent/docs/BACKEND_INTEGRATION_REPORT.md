@@ -1,6 +1,6 @@
 # Kairos Agent — Backend Integration Report
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Domain:** `kairos-t1.gokulp.online`  
 **Audience:** Backend developers integrating with the Kairos Agent module  
 **Last Updated:** 2026-02-27
@@ -14,10 +14,11 @@
 3. [Full API Reference](#3-full-api-reference)
 4. [Allergy System](#4-allergy-system)
 5. [Generative UI Payload Schemas](#5-generative-ui-payload-schemas)
-6. [Integration Flows](#6-integration-flows)
-7. [Error Codes](#7-error-codes)
-8. [Data Boundary](#8-data-boundary)
-9. [Deployment & Ops](#9-deployment--ops)
+6. [Recommendation System Schemas](#6-recommendation-system-schemas)
+7. [Integration Flows](#7-integration-flows)
+8. [Error Codes](#8-error-codes)
+9. [Data Boundary](#9-data-boundary)
+10. [Deployment & Ops](#10-deployment--ops)
 
 ---
 
@@ -41,7 +42,7 @@ The Agent **does not** do authentication, session management, password hashing, 
 | Frontend  | kairos.gokulp.online          | Next.js UI, Vercel AI SDK, Generative UI rendering           |
 | Backend   | kariosb.gokulp.online         | Auth, JWT issuance, user registration, sessions              |
 | Mail      | kairos-t0.gokulp.online       | Transactional email                                          |
-| **Agent** | **kairos-t1.gokulp.online**   | **Restaurant intelligence, personalisation, allergy safety** |
+| **Agent** | **kairos-t1.gokulp.online**   | **Restaurant intelligence, recommendation feed, personalisation, allergy safety** |
 
 ### How `uid` Flows
 
@@ -63,6 +64,8 @@ The Backend is the sole issuer of `uid` values. The flow is:
   │  Next.js / Vercel    │
   └─────────┬───────────┘
             │ POST /chat
+            │ GET  /recommendations/{uid}
+            │ GET  /recommendations/{uid}/{id}/expand
             │ Header: X-User-ID: <uid>
             ▼
   ┌─────────────────────────────────────────────────┐
@@ -74,6 +77,11 @@ The Backend is the sole issuer of `uid` values. The flow is:
   │         │                                       │
   │  ┌──────▼───────┐   ┌──────────────────────┐   │
   │  │ Hybrid Search │   │  AllergyGuard        │   │
+  │  └──────┬───────┘   └──────────────────────┘   │
+  │         │                                       │
+  │  ┌──────▼───────┐   ┌──────────────────────┐   │
+  │  │  FitScorer   │   │  RecommendationSvc   │   │
+  │  │  (pure Py)   │   │  (TTLCache 24 h)     │   │
   │  └──────┬───────┘   └──────────────────────┘   │
   │         │                                       │
   │  ┌──────▼───────────────────────────────────┐  │
@@ -113,15 +121,16 @@ Used for all user management endpoints.
 
 ### 2.2 User-Delegated Authentication (Frontend → Agent)
 
-Used for the chat endpoint only.
+Used for the chat and recommendation endpoints.
 
 | Header      | Value                         | Required |
 |-------------|-------------------------------|----------|
-| `X-User-ID` | UUID v4 string of the user    | Yes       |
+| `X-User-ID` | UUID v4 string of the user    | Yes      |
 
 - The Frontend extracts the `uid` from its session/JWT and forwards it.
 - The Agent trusts this value — it does **not** verify JWTs.
 - JWT verification is the Backend's responsibility before issuing a session to the Frontend.
+- For `/recommendations/{uid}/*` endpoints, the `uid` in the URL path **must match** the `X-User-ID` header — a mismatch returns `403 Forbidden`.
 
 ### 2.3 Security Recommendations
 
@@ -507,6 +516,48 @@ The response is a Server-Sent Events stream. Each line is a JSON object:
 
 ---
 
+### 3.4 Recommendation Endpoints
+
+Both endpoints use `X-User-ID` authentication (same as `/chat`). The `uid` in the URL path must match the `X-User-ID` header — a mismatch returns `403 Forbidden`.
+
+#### `GET /recommendations/{uid}`
+
+Returns a ranked, personalised restaurant feed. Results are cached per user per calendar day (TTL 24 h).
+
+**Headers:** `X-User-ID` (required), `Content-Type: application/json`
+
+**Query parameters:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `limit` | int | 10 | Number of results, 1–25 |
+| `refresh` | bool | false | Force cache invalidation and regenerate |
+
+**Response 200:** `RecommendationPayload` (see §6.1)
+
+| Status | When |
+|--------|------|
+| 200 | Success |
+| 400 | Invalid uid format |
+| 403 | X-User-ID does not match uid in path |
+| 404 | User not found |
+
+#### `GET /recommendations/{uid}/{restaurant_id}/expand`
+
+Lazily loads rich detail for a single restaurant. Always freshly generated — not cached at the server level.
+
+**Headers:** `X-User-ID` (required)
+
+**Response 200:** `ExpandedDetailResponse` (see §6.2)
+
+| Status | When |
+|--------|------|
+| 200 | Success |
+| 403 | X-User-ID does not match uid in path |
+| 404 | User or restaurant not found |
+
+---
+
 ## 4. Allergy System
 
 ### 4.1 Why Allergies Are Separate from Preferences
@@ -744,9 +795,85 @@ Used when no restaurants are being recommended — clarifications, general quest
 
 ---
 
-## 6. Integration Flows
+## 6. Recommendation System Schemas
 
-### 6.1 New User Registration
+### 6.1 `RecommendationPayload`
+
+Top-level response for `GET /recommendations/{uid}`.
+
+```json
+{
+  "uid": "550e8400-e29b-41d4-a716-446655440000",
+  "generated_at": "2026-02-27T10:30:00Z",
+  "recommendations": [
+    {
+      "rank": 1,
+      "fit_score": 87,
+      "fit_tags": [
+        {"label": "Matches your South Indian preference", "type": "cuisine"},
+        {"label": "Within your $$ comfort zone", "type": "price"},
+        {"label": "Known for quiet — your top vibe tag", "type": "vibe"},
+        {"label": "Vegan-friendly", "type": "dietary"}
+      ],
+      "consolidated_review": "A calm South Indian haven with excellent dosas — perfect for a quiet weekday lunch.",
+      "allergy_summary": {
+        "is_safe": true,
+        "warnings": []
+      },
+      "expanded_detail": null,
+      "restaurant": { }
+    }
+  ]
+}
+```
+
+`fit_score` is 0–100, computed algorithmically by FitScorer (no LLM involved). `fit_tags` contains a maximum of 4 items, sorted by dimension weight (cuisine 30 pt → vibe 25 pt → price 20 pt → dietary 15 pt → allergy 10 pt).
+
+`expanded_detail` is always `null` in this response — it is populated lazily by the `/expand` endpoint and cached in frontend component state.
+
+`restaurant` follows the same `RestaurantResult` shape used in `GenerativeUIPayload` (see §5).
+
+### 6.2 `ExpandedDetailResponse`
+
+Response for `GET /recommendations/{uid}/{restaurant_id}/expand`.
+
+```json
+{
+  "restaurant_id": 101,
+  "expanded_detail": {
+    "review_summary": "Consistently rated for excellent biryani and attentive service.",
+    "highlights": [
+      {"emoji": "🍛", "text": "Award-winning house biryani"},
+      {"emoji": "🤫", "text": "Low ambient noise — great for conversation"}
+    ],
+    "crowd_profile": "Young professionals and couples on weekday evenings",
+    "best_for": ["date night", "quiet lunch", "solo dining"],
+    "avoid_if": ["large groups", "you need parking"],
+    "radar_scores": {
+      "romance": 8.5,
+      "noise_level": 7.5,
+      "food_quality": 9.0,
+      "vegan_options": 4.0,
+      "value_for_money": 8.0
+    },
+    "why_fit_paragraph": "Given your preference for quiet South Indian spots in the $$ range, this venue scores highly on noise level and food quality while staying within your budget.",
+    "allergy_detail": {
+      "is_safe": true,
+      "confidence": "high",
+      "warnings": [],
+      "safe_note": "No known allergens detected for your profile"
+    }
+  }
+}
+```
+
+`radar_scores` drives the `<RadarChart>` in `RecommendationFeed.jsx`. All five keys (`romance`, `noise_level`, `food_quality`, `vegan_options`, `value_for_money`) are always present, with values on a 0–10 scale.
+
+---
+
+## 7. Integration Flows
+
+### 7.1 New User Registration
 
 ```
 1. User completes registration on the Frontend.
@@ -776,7 +903,7 @@ Used when no restaurants are being recommended — clarifications, general quest
    lazily on the first GET /users/{uid} call.
 ```
 
-### 6.2 Chat Turn
+### 7.2 Chat Turn
 
 ```
 1. User sends a message on the Frontend.
@@ -801,7 +928,7 @@ Used when no restaurants are being recommended — clarifications, general quest
    - Profiler updates user preferences.
 ```
 
-### 6.3 Allergy Profile Update
+### 7.3 Allergy Profile Update
 
 ```
 1. User opens the allergy settings on the Frontend.
@@ -832,7 +959,7 @@ Used when no restaurants are being recommended — clarifications, general quest
 7. All subsequent chat turns will use the updated allergy profile.
 ```
 
-### 6.4 Account Deletion
+### 7.4 Account Deletion
 
 ```
 1. User requests account deletion.
@@ -852,9 +979,39 @@ Used when no restaurants are being recommended — clarifications, general quest
 5. Backend confirms deletion to the Frontend and clears the session.
 ```
 
+### 7.5 Recommendation Feed
+
+```
+1. Frontend navigates to the Recommendations tab /
+   mounts <RecommendationFeed uid={uid} apiBase="..." />.
+
+2. Component calls:
+   GET https://kairos-t1.gokulp.online/recommendations/{uid}?limit=10
+   Headers: X-User-ID: <uid>
+
+3. Agent checks TTLCache (key = sha256(uid + date.today())):
+   - CACHE HIT  → returns cached RecommendationPayload instantly
+   - CACHE MISS → runs 7-step pipeline (FitScorer + AllergyGuard
+                  + batch LLM review generation) → ~2-4 s
+
+4. Frontend renders a collapsed RecommendationCard list.
+   FitScore badge colour: green ≥80, amber 60-79, grey <60.
+
+5. User taps a card → Frontend calls:
+   GET https://kairos-t1.gokulp.online/recommendations/{uid}/{restaurant_id}/expand
+   Headers: X-User-ID: <uid>
+   → ~1-2 s (single LLM call).
+   Result is cached in Frontend component state — no re-fetch on re-open.
+
+6. Subsequent chat turns update the user's preferences.
+   The profiler fires prewarm_recommendations(uid) in the background,
+   refreshing the 24 h cache so the next /recommendations call is instant.
+   The Backend does not need to trigger this explicitly.
+```
+
 ---
 
-## 7. Error Codes
+## 8. Error Codes
 
 | Code                   | HTTP Status | Description |
 |------------------------|-------------|-------------|
@@ -866,7 +1023,7 @@ Used when no restaurants are being recommended — clarifications, general quest
 
 ---
 
-## 8. Data Boundary
+## 9. Data Boundary
 
 The Agent and Backend each own distinct data. Neither should attempt to replicate or override the other's data.
 
@@ -887,34 +1044,35 @@ The Agent and Backend each own distinct data. Neither should attempt to replicat
 
 ---
 
-## 9. Deployment & Ops
+## 10. Deployment & Ops
 
-### 9.1 Required Environment Variables
+### 10.1 Required Environment Variables
 
 | Variable              | Description                                       | Example |
 |-----------------------|---------------------------------------------------|---------|
 | `DATABASE_URL`        | Async PostgreSQL connection string                | `postgresql+asyncpg://user:pass@host:5432/db` |
-| `GOOGLE_API_KEY`      | Google AI API key for Gemma + Embeddings          | `AIza...` |
+| `GOOGLE_API_KEY`      | Google AI API key for Gemini + Embeddings         | `AIza...` |
 | `SERVICE_TOKEN`       | Shared secret for inter-service auth              | 32+ char random string |
 | `ALLOWED_ORIGINS`     | Comma-separated CORS origins                      | `https://kairos.gokulp.online,http://localhost:3000` |
-| `GEMMA_MODEL`         | Gemma model name                                  | `gemma-2-9b-it` |
-| `EMBEDDING_MODEL`     | Google embedding model                            | `text-embedding-004` |
+| `GEMMA_MODEL`         | Primary LLM model name                            | `gemini-2.5-flash` |
+| `EMBEDDING_MODEL`     | Google embedding model                            | `gemini-embedding-001` |
 | `EMBEDDING_DIMENSIONS`| Embedding vector size                             | `768` |
 | `APP_ENV`             | `development` or `production`                     | `production` |
 | `LOG_LEVEL`           | Python logging level                              | `INFO` |
 
-### 9.2 Network Requirements
+### 10.2 Network Requirements
 
 | Direction           | From         | To                            | Port | Protocol |
 |---------------------|--------------|-------------------------------|------|----------|
 | User management     | Backend      | `kairos-t1.gokulp.online`     | 443  | HTTPS    |
 | Chat                | Frontend     | `kairos-t1.gokulp.online`     | 443  | HTTPS (SSE) |
+| Recommendations     | Frontend     | `kairos-t1.gokulp.online`     | 443  | HTTPS (JSON) |
 | DB                  | Agent        | PostgreSQL host               | 5432 | TCP      |
 | Google AI           | Agent        | `generativelanguage.googleapis.com` | 443 | HTTPS |
 
 **Firewall recommendation:** The `/users/*` endpoints should not be accessible from the public internet. Place the Agent behind an API gateway or use IP allowlisting to restrict `/users/*` to the Backend's IP range only.
 
-### 9.3 Health Check Endpoints for Monitoring
+### 10.3 Health Check Endpoints for Monitoring
 
 The Backend's uptime monitoring system should poll these endpoints:
 
@@ -927,7 +1085,7 @@ If `GET /ready` returns 503, the Agent can still serve cached/degraded results. 
 - Continue forwarding chat requests (the Agent handles degraded states gracefully).
 - Alert on-call if the condition persists for more than 5 minutes.
 
-### 9.4 Recommended Retry Policy (Backend → Agent)
+### 10.4 Recommended Retry Policy (Backend → Agent)
 
 | Scenario                               | Retry strategy |
 |----------------------------------------|----------------|
@@ -936,10 +1094,11 @@ If `GET /ready` returns 503, the Agent can still serve cached/degraded results. 
 | `DELETE /users/{uid}` fails            | 3 retries; schedule a deferred cleanup job on persistent failure |
 | `GET /health` / `GET /ready` returns 503 | Retry every 30 s; stop routing to Agent if down for > 5 min |
 | `POST /chat` fails (502/503)           | Frontend retries once after 2 s; shows user error on second failure |
+| `GET /recommendations/{uid}` fails     | 1 retry after 1 s; show empty state on second failure (non-critical path) |
 
 For the allergy patch endpoint specifically, persistent failure must trigger an alert because the user's safety profile was not updated. The Backend should log the attempted request and retry it when the Agent recovers.
 
-### 9.5 Starting the Agent
+### 10.5 Starting the Agent
 
 ```bash
 # 1. Start dependencies
@@ -952,13 +1111,13 @@ python scripts/create_tables.py
 python scripts/ingest.py --csv data/zomato.csv
 
 # 4. Start the server
-uvicorn app.main:app --host 0.0.0.0 --port 8001
+bash run.sh        # (uses uvicorn on port 4021)
 ```
 
-In production, run with `--workers 4` (or via gunicorn with uvicorn workers):
+In production, run with multiple workers:
 
 ```bash
-gunicorn app.main:app -k uvicorn.workers.UvicornWorker --workers 4 --bind 0.0.0.0:8001
+gunicorn app.main:app -k uvicorn.workers.UvicornWorker --workers 4 --bind 0.0.0.0:4021
 ```
 
 ---
