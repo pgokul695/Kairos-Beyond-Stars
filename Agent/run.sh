@@ -36,8 +36,9 @@ cd "$SCRIPT_DIR"
 
 # ── Run the server ────────────────────────────────────────────────────────────
 HOST="${HOST:-0.0.0.0}"
-PORT="${PORT:-8001}"
+PORT="${PORT:-4021}"
 WORKERS="${WORKERS:-1}"
+LOG_LEVEL_LOWER="$(echo "${LOG_LEVEL:-info}" | tr '[:upper:]' '[:lower:]')"
 RELOAD_FLAG=""
 [ "$APP_ENV" = "development" ] && RELOAD_FLAG="--reload"
 
@@ -55,11 +56,11 @@ if [ "$WORKERS" -gt 1 ]; then
         -k uvicorn.workers.UvicornWorker \
         --workers "$WORKERS" \
         --bind "$HOST:$PORT" \
-        --log-level "${LOG_LEVEL:-info}"
+        --log-level "$LOG_LEVEL_LOWER"
 else
     exec uvicorn app.main:app \
         --host "$HOST" \
         --port "$PORT" \
         $RELOAD_FLAG \
-        --log-level "${LOG_LEVEL:-info}"
+        --log-level "$LOG_LEVEL_LOWER"
 fi
