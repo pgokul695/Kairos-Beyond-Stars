@@ -1,0 +1,157 @@
+# =============================================================================
+# KAIROS — BEYOND STARS  |  .gitignore
+# =============================================================================
+
+
+# ---------------------------------------------------------------------------
+# Environment Variables — NEVER commit real secrets
+# ---------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+*/.env
+*/.env.local
+
+
+# ---------------------------------------------------------------------------
+# Python — Agent & Backend
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Distributions / packaging
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+*.tar.gz
+
+# Unit test / coverage
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# mypy / pyright type stubs cache
+.mypy_cache/
+.pyright/
+.dmypy.json
+
+# Jupyter (if used locally for exploration)
+.ipynb_checkpoints/
+
+
+# ---------------------------------------------------------------------------
+# Database Files
+# ---------------------------------------------------------------------------
+db.sqlite3
+*.sqlite3
+*.db
+
+# PostgreSQL Docker volume data
+pgdata/
+postgres-data/
+
+
+# ---------------------------------------------------------------------------
+# Node / Frontend
+# ---------------------------------------------------------------------------
+node_modules/
+.pnp
+.pnp.js
+
+# Vite build output
+Frontend/beyond-stars/dist/
+Frontend/beyond-stars/.vite/
+
+# npm / yarn / pnpm lockfile output (keep package-lock.json or yarn.lock,
+# but ignore local logs)
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local Expo / React Native (if ever added)
+.expo/
+
+
+# ---------------------------------------------------------------------------
+# Data Files — Zomato CSV and ingestion artefacts
+# ---------------------------------------------------------------------------
+Agent/data/
+*.csv
+*.parquet
+*.json.gz
+
+
+# ---------------------------------------------------------------------------
+# IDE & Editor
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+
+# ---------------------------------------------------------------------------
+# OS Generated
+# ---------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+
+# ---------------------------------------------------------------------------
+# Docker Artefacts
+# ---------------------------------------------------------------------------
+# Ignore locally built Docker images listed in docker-compose overrides
+docker-compose.override.yml
+
+
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
+*.log
+logs/
+*.pid
+
+
+# ---------------------------------------------------------------------------
+# Secrets & Certificates
+# ---------------------------------------------------------------------------
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+
+
+# ---------------------------------------------------------------------------
+# Miscellaneous
+# ---------------------------------------------------------------------------
+.cache/
+tmp/
+temp/
