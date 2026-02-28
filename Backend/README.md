@@ -20,6 +20,18 @@
 
 ---
 
+## 📚 Documentation Index
+
+| Document | Description |
+|----------|-------------|
+| [Backend/docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Django module graph, middleware lifecycle, component breakdown |
+| [Backend/docs/SETUP.md](docs/SETUP.md) | Installation, manage.py commands, migration steps |
+| [Backend/docs/API.md](docs/API.md) | All endpoints, request/response schemas, integration contract |
+| [Backend/docs/DATABASE.md](docs/DATABASE.md) | ER diagram, field tables, indexing, migration history |
+| [Backend/docs/SUMMARY.md](docs/SUMMARY.md) | Module summary, integration points, known issues |
+
+---
+
 ## 🧭 Overview
 
 The Kairos Backend is a Django 5.2 REST API responsible for user identity management across the entire platform. It handles the three core authentication operations — registration, email verification, and login — and synchronises user lifecycle events to the Agent via the internal service API.

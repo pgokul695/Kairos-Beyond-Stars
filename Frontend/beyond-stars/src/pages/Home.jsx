@@ -63,16 +63,16 @@ const Home = () => {
           {/* Stats */}
           <div className="grid grid-cols-3 gap-8 max-w-2xl mx-auto mt-16">
             <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-1">10K+</div>
-              <div className="text-sm text-gray-300">Restaurants</div>
+              <div className="text-3xl md:text-4xl font-bold text-white mb-1">1K+</div>
+              <div className="text-sm text-gray-300"> Real Restaurants</div>
             </div>
             <div className="text-center border-x border-white/20">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-1">98%</div>
-              <div className="text-sm text-gray-300">Match Accuracy</div>
+              <div className="text-3xl md:text-4xl font-bold text-white mb-1">100ms</div>
+              <div className="text-sm text-gray-300">Average Response Time</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-1">50K+</div>
-              <div className="text-sm text-gray-300">Happy Diners</div>
+              <div className="text-3xl md:text-4xl font-bold text-white mb-1">Data from+</div>
+              <div className="text-sm text-gray-300">Zomato reviews (Bengaluru)</div>
             </div>
           </div>
         </div>

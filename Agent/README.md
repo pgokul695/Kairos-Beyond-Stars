@@ -25,6 +25,17 @@
 
 ---
 
+## 📚 Documentation Index
+
+| Document | Description |
+|----------|-------------|
+| [Agent/docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full pipeline flowchart, component reference, DB architecture |
+| [Agent/docs/SETUP.md](docs/SETUP.md) | Agent-specific dependencies, ingest scripts, env vars |
+| [Agent/docs/API.md](docs/API.md) | All service functions, signatures, return types, retry logic |
+| [Agent/docs/SUMMARY.md](docs/SUMMARY.md) | Capabilities, known issues, improvement roadmap |
+
+---
+
 ## 🧭 Overview
 
 The Kairos Agent is a FastAPI microservice that powers the AI features of the Beyond Stars platform. It handles every user chat message through a five-step ReAct reasoning loop, provides a personalised daily restaurant feed via the Recommendation System, and enforces a mandatory allergy safety layer on every result it returns.

@@ -22,6 +22,19 @@
 
 ---
 
+## 📚 Documentation Index
+
+| Document | Description |
+|----------|-------------|
+| [Frontend/docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Component hierarchy, routing, state management, Vite config |
+| [Frontend/docs/SETUP.md](docs/SETUP.md) | Node.js setup, environment variables, build commands |
+| [Frontend/docs/UI_UX.md](docs/UI_UX.md) | Design system, color palette, typography, user journey flows |
+| [Frontend/docs/API.md](docs/API.md) | All API calls, auth token management, error/loading strategy |
+| [Frontend/docs/COMPONENTS.md](docs/COMPONENTS.md) | Every component — props tables, usage examples |
+| [Frontend/docs/SUMMARY.md](docs/SUMMARY.md) | Pages overview, UX highlights, known issues |
+
+---
+
 ## 🧭 Overview
 
 The Kairos Frontend is a single-page application built with React 19, Vite 7, and Tailwind CSS v4. It delivers the full "Beyond Stars" dining discovery experience: a hero landing page, AI-powered search, a filterable and sortable restaurant grid with a live map panel, radar-chart comparisons, and detailed restaurant pages with photo galleries.
