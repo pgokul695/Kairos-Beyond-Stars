@@ -18,15 +18,7 @@ router = APIRouter(tags=["health"])
 @router.get("/health")
 async def health() -> dict:
     """Liveness probe — returns 200 if the process is running."""
-    # Import lazily to avoid circular imports at module load time
-    from app.services.orchestrator import _cache_decomp, _cache_search  # noqa: PLC0415
-
-    return {
-        "status": "ok",
-        "version": "1.0.0",
-        "cache_decomp_size": len(_cache_decomp),
-        "cache_search_size": len(_cache_search),
-    }
+    return {"status": "ok", "version": "1.0.0"}
 
 
 @router.get("/ready")

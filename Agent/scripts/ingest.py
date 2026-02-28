@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import AsyncSessionLocal, engine
+from app.database import AsyncSessionLocal, engine, init_pgvector
 from app.models import Base  # noqa: F401
 from app.utils.allergy_data import (
     ALLERGEN_SYNONYMS,
@@ -229,7 +229,7 @@ async def upsert_restaurant(session: AsyncSession, row_data: dict) -> Optional[i
                     rating = :rating, votes = :votes,
                     known_allergens = :known_allergens,
                     allergen_confidence = :allergen_confidence,
-                    meta = :meta, updated_at = CURRENT_TIMESTAMP
+                    meta = :meta, updated_at = NOW()
                 WHERE name = :name AND area = :area
             """),
             row_data,
@@ -253,62 +253,30 @@ async def upsert_restaurant(session: AsyncSession, row_data: dict) -> Optional[i
         return result.scalar()
 
 
-async def insert_reviews_sqlite(
+async def insert_reviews(
     session: AsyncSession,
     restaurant_id: int,
     reviews: list[str],
     review_mentions: dict[str, list[str]],
+    embeddings: list[Optional[list[float]]],
 ) -> None:
-    """Insert reviews into SQLite (text + allergen mentions, no embedding)."""
-    for review_text in reviews:
+    """Insert reviews for a restaurant, attaching embeddings and allergen mentions."""
+    for i, review_text in enumerate(reviews):
+        embedding = embeddings[i] if i < len(embeddings) else None
         allergen_mentions = review_mentions.get(review_text, [])
         await session.execute(
             text("""
-                INSERT OR IGNORE INTO reviews
-                    (restaurant_id, review_text, allergen_mentions)
-                VALUES (:restaurant_id, :review_text, :allergen_mentions)
+                INSERT INTO reviews (restaurant_id, review_text, embedding, allergen_mentions)
+                VALUES (:restaurant_id, :review_text, :embedding, :allergen_mentions)
+                ON CONFLICT DO NOTHING
             """),
             {
                 "restaurant_id": restaurant_id,
                 "review_text": review_text,
-                "allergen_mentions": json.dumps(allergen_mentions),
+                "embedding": str(embedding) if embedding else None,
+                "allergen_mentions": allergen_mentions,
             },
         )
-
-
-async def insert_reviews_chroma(
-    restaurant_id: int,
-    reviews: list[str],
-    embeddings: list[Optional[list[float]]],
-) -> None:
-    """Upsert review embeddings into ChromaDB."""
-    ids: list[str] = []
-    docs: list[str] = []
-    metas: list[dict] = []
-    embs: list[list[float]] = []
-
-    for i, (review_text, embedding) in enumerate(zip(reviews, embeddings)):
-        if embedding is None:
-            continue
-        ids.append(f"r{restaurant_id}_{i}")
-        docs.append(review_text[:2000])
-        metas.append({"restaurant_id": restaurant_id})
-        embs.append(embedding)
-
-    if not ids:
-        return
-
-    def _upsert() -> None:
-        from app.services.chroma_client import get_reviews_collection
-        collection = get_reviews_collection()
-        collection.upsert(
-            ids=ids,
-            embeddings=embs,
-            documents=docs,
-            metadatas=metas,
-        )
-
-    await asyncio.to_thread(_upsert)
 
 
 # ── Main ingestion logic ─────────────────────────────────────────────────────
@@ -319,7 +287,6 @@ async def run_ingest(
     dry_run: bool = False,
     re_embed: bool = False,
     retag_allergens: bool = False,
-    limit: Optional[int] = None,
 ) -> None:
     """Full ingestion pipeline."""
     logger.info("Loading CSV: %s", csv_path)
@@ -337,10 +304,6 @@ async def run_ingest(
     before = len(df)
     df = df.drop_duplicates(subset=[name_col, area_col])
     logger.info("After dedup on (name, location): %d rows (removed %d).", len(df), before - len(df))
-
-    if limit is not None:
-        df = df.head(limit)
-        logger.info("Limit applied: processing first %d rows.", len(df))
 
     if dry_run:
         logger.info("-- DRY RUN: parsing only, no DB writes --")
@@ -361,6 +324,8 @@ async def run_ingest(
         return
 
     # Ensure DB and tables exist
+    async with AsyncSessionLocal() as session:
+        await init_pgvector(session)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -400,12 +365,12 @@ async def run_ingest(
                 "address": str(row.get("address", "")).strip() or None,
                 "area": area or None,
                 "city": "Bangalore",
-                "cuisine_types": json.dumps(cuisines),
+                "cuisine_types": cuisines,
                 "price_tier": _cost_to_tier(cost),
                 "cost_for_two": cost,
                 "rating": _parse_rating(row.get("rate")),
                 "votes": _parse_votes(row.get("votes")),
-                "known_allergens": json.dumps(allergens),
+                "known_allergens": allergens,
                 "allergen_confidence": confidence,
                 "meta": json.dumps(meta),
             }
@@ -425,11 +390,11 @@ async def run_ingest(
                             UPDATE restaurants
                             SET known_allergens = :known_allergens,
                                 allergen_confidence = :allergen_confidence,
-                                updated_at = CURRENT_TIMESTAMP
+                                updated_at = NOW()
                             WHERE name = :name AND area = :area
                         """),
                         {
-                            "known_allergens": json.dumps(allergens),
+                            "known_allergens": allergens,
                             "allergen_confidence": confidence,
                             "name": name,
                             "area": area,
@@ -463,13 +428,10 @@ async def run_ingest(
                             await session.commit()
                             continue
 
-                    # Embed reviews and store in SQLite + ChromaDB
+                    # Embed reviews in batches
                     embeddings = await embed_batch(reviews)
-                    await insert_reviews_sqlite(
-                        session, restaurant_id, reviews, review_mentions
-                    )
-                    await insert_reviews_chroma(
-                        restaurant_id, reviews, embeddings
+                    await insert_reviews(
+                        session, restaurant_id, reviews, review_mentions, embeddings
                     )
 
                 await session.commit()
@@ -495,7 +457,6 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Parse only, no DB writes")
     parser.add_argument("--re-embed", action="store_true", help="Regenerate all embeddings")
     parser.add_argument("--retag-allergens", action="store_true", help="Re-run allergen tagger only")
-    parser.add_argument("--limit", type=int, default=None, help="Process only the first N rows (for testing)")
     args = parser.parse_args()
 
     asyncio.run(
@@ -504,7 +465,6 @@ def main() -> None:
             dry_run=args.dry_run,
             re_embed=args.re_embed,
             retag_allergens=args.retag_allergens,
-            limit=args.limit,
         )
     )
 

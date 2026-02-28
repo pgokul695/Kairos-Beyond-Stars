@@ -9,16 +9,12 @@ class Settings(BaseSettings):
     """Centralised settings — no hardcoded values anywhere else."""
 
     # Database
-    database_url: str = Field(
-        "sqlite+aiosqlite:///./data/kairos_agent.db", env="DATABASE_URL"
-    )
-    chroma_path: str = Field("./data/chroma", env="CHROMA_PATH")
+    database_url: str = Field(..., env="DATABASE_URL")
 
     # Google AI
     google_api_key: str = Field(..., env="GOOGLE_API_KEY")
-    gemma_model: str = Field("gemini-2.5-flash", env="GEMMA_MODEL")
-    gemma_fallback_model: str = Field("gemma-3-12b-it", env="GEMMA_FALLBACK_MODEL")
-    embedding_model: str = Field("gemini-embedding-001", env="EMBEDDING_MODEL")
+    gemma_model: str = Field("gemma-2-9b-it", env="GEMMA_MODEL")
+    embedding_model: str = Field("text-embedding-004", env="EMBEDDING_MODEL")
     embedding_dimensions: int = Field(768, env="EMBEDDING_DIMENSIONS")
 
     # Security
@@ -31,12 +27,6 @@ class Settings(BaseSettings):
     # App
     app_env: str = Field("development", env="APP_ENV")
     log_level: str = Field("INFO", env="LOG_LEVEL")
-
-    # Local ML — all default to false so production behaviour is unchanged
-    # until explicitly opted in.
-    use_local_embeddings: bool = Field(False, env="USE_LOCAL_EMBEDDINGS")
-    use_local_reranker: bool = Field(False, env="USE_LOCAL_RERANKER")
-    use_local_classifier: bool = Field(False, env="USE_LOCAL_CLASSIFIER")
 
     # Derived
     @property

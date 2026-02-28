@@ -38,7 +38,6 @@ async def embed_texts(texts: list[str]) -> list[Optional[list[float]]]:
                 model=f"models/{settings.embedding_model}",
                 content=batch,
                 task_type="retrieval_document",
-                output_dimensionality=settings.embedding_dimensions,
             )
             embeddings = response.get("embedding", [])
             for i, emb in enumerate(embeddings):
@@ -65,7 +64,6 @@ async def embed_single(text: str) -> Optional[list[float]]:
             model=f"models/{settings.embedding_model}",
             content=text,
             task_type="retrieval_query",
-            output_dimensionality=settings.embedding_dimensions,
         )
         return response.get("embedding")
     except Exception as exc:

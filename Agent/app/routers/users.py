@@ -12,7 +12,6 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from fastapi.responses import Response
 from sqlalchemy import func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,14 +40,7 @@ async def verify_service_token(
     x_service_token: str = Header(..., alias="X-Service-Token"),
 ) -> None:
     """Verify that the inter-service token matches the configured secret."""
-    received = x_service_token.strip()
-    expected = settings.service_token.strip()
-    if received != expected:
-        logger.warning(
-            "Service token mismatch — received len=%d, expected len=%d",
-            len(received),
-            len(expected),
-        )
+    if x_service_token != settings.service_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid service token",
@@ -273,12 +265,12 @@ async def patch_user_allergies(
     return AllergyFlagsResponse(uid=uid, allergy_flags=allergy_flags, updated=True)
 
 
-@router.delete("/{uid}")
+@router.delete("/{uid}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     uid: UUID,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_service_token),
-) -> Response:
+) -> None:
     """Delete a user and cascade-delete all their interactions."""
     result = await db.execute(
         text("SELECT uid FROM users WHERE uid = :uid"),
@@ -303,7 +295,6 @@ async def delete_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete user",
         ) from exc
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{uid}/interactions", response_model=InteractionListResponse)
@@ -359,12 +350,12 @@ async def list_interactions(
     )
 
 
-@router.delete("/{uid}/interactions")
+@router.delete("/{uid}/interactions", status_code=status.HTTP_204_NO_CONTENT)
 async def clear_interactions(
     uid: UUID,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_service_token),
-) -> Response:
+) -> None:
     """Clear all interaction history for a user (keeps the user record)."""
     result = await db.execute(
         text("SELECT uid FROM users WHERE uid = :uid"),
@@ -389,4 +380,3 @@ async def clear_interactions(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to clear interactions",
         ) from exc
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
